@@ -42,16 +42,18 @@ if RICH_AVAILABLE:
 class YAMLToLangGraphConverter:
     """Main converter class that orchestrates the conversion process."""
     
-    def __init__(self, yaml_file_path: str, output_dir: Optional[str] = None):
+    def __init__(self, yaml_file_path: str, output_dir: Optional[str] = None, generate_visualization: bool = True):
         """
         Initialize the converter.
         
         Args:
             yaml_file_path: Path to the YAML workflow file
             output_dir: Output directory for generated code (default: based on workflow name)
+            generate_visualization: Whether to generate graph visualization
         """
         self.yaml_file_path = Path(yaml_file_path)
         self.output_dir = output_dir
+        self.generate_visualization = generate_visualization
         
         if not self.yaml_file_path.exists():
             raise FileNotFoundError(f"YAML file not found: {yaml_file_path}")
@@ -97,7 +99,7 @@ class YAMLToLangGraphConverter:
                 progress.update(task, advance=10, description="Generating LangGraph code...")
                 
                 # Generate the code
-                generator = LangGraphCodeGenerator(self.output_dir)
+                generator = LangGraphCodeGenerator(self.output_dir, self.generate_visualization)
                 generator.generate(workflow_info)
                 
                 progress.update(task, completed=100, description="Conversion complete!")
@@ -121,7 +123,7 @@ class YAMLToLangGraphConverter:
             print(f"Generating LangGraph code in: {self.output_dir}")
             
             # Generate the code
-            generator = LangGraphCodeGenerator(self.output_dir)
+            generator = LangGraphCodeGenerator(self.output_dir, self.generate_visualization)
             generator.generate(workflow_info)
             
             print("Conversion completed successfully!")

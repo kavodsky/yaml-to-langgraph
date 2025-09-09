@@ -4,24 +4,26 @@ LangGraph Code Generator
 Generates LangGraph code from parsed workflow information.
 """
 
-import os
-from typing import Dict, List, Any, Optional
+from typing import Optional
 from pathlib import Path
-from .yaml_parser import WorkflowInfo, NodeInfo, EdgeInfo
+from .yaml_parser import WorkflowInfo, NodeInfo
+from .graph_visualizer import GraphVisualizer, VisualizationConfig
 
 
 class LangGraphCodeGenerator:
     """Generator for LangGraph code from workflow information."""
     
-    def __init__(self, output_dir: str = "generated_graph"):
+    def __init__(self, output_dir: str = "generated_graph", generate_visualization: bool = True):
         """
         Initialize the code generator.
         
         Args:
             output_dir: Directory to output generated code
+            generate_visualization: Whether to generate graph visualization
         """
         self.output_dir = Path(output_dir)
         self.workflow_info: Optional[WorkflowInfo] = None
+        self.generate_visualization = generate_visualization
         
     def generate(self, workflow_info: WorkflowInfo) -> None:
         """
@@ -51,6 +53,10 @@ class LangGraphCodeGenerator:
         self._generate_requirements()
         self._generate_readme()
         self._generate_example()
+        
+        # Generate graph visualization
+        if self.generate_visualization:
+            self._generate_visualization()
     
     def _create_directory_structure(self) -> None:
         """Create the output directory structure."""
@@ -138,7 +144,7 @@ def start_node(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 '''
         
-        with open(self.output_dir / "nodes" / "start_node.py", 'w') as f:
+        with open(self.output_dir / "nodes" / "start_node.py", 'w', encoding='utf-8') as f:
             f.write(start_node_content)
         
         # End node
@@ -165,7 +171,7 @@ def end_node(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 '''
         
-        with open(self.output_dir / "nodes" / "end_node.py", 'w') as f:
+        with open(self.output_dir / "nodes" / "end_node.py", 'w', encoding='utf-8') as f:
             f.write(end_node_content)
         
         # LLM node template
@@ -243,7 +249,7 @@ def create_llm_node(
     return llm_node
 '''
         
-        with open(self.output_dir / "nodes" / "llm_node.py", 'w') as f:
+        with open(self.output_dir / "nodes" / "llm_node.py", 'w', encoding='utf-8') as f:
             f.write(llm_node_content)
     
     def _generate_workflow_nodes(self) -> None:
@@ -599,6 +605,34 @@ if __name__ == "__main__":
         
         with open(self.output_dir / "example_usage.py", 'w') as f:
             f.write(content)
+    
+    def _generate_visualization(self) -> None:
+        """Generate graph visualization."""
+        try:
+            # Create visualization config
+            config = VisualizationConfig(
+                output_format="png",
+                layout_algorithm="hierarchical",
+                figure_size=(16, 10),
+                dpi=300,
+                show_labels=True,
+                show_edge_labels=True,
+                color_scheme="default"
+            )
+            
+            # Generate the visualization
+            visualizer = GraphVisualizer(config)
+            output_path = self.output_dir / "workflow_graph.png"
+            
+            visualization_path = visualizer.visualize_workflow(self.workflow_info, str(output_path))
+            
+            print(f"Graph visualization saved to: {visualization_path}")
+            
+        except ImportError as e:
+            print(f"Warning: Could not generate graph visualization. Missing dependencies: {e}")
+            print("Install graphviz and matplotlib to enable visualization: pip install graphviz matplotlib networkx")
+        except Exception as e:
+            print(f"Warning: Failed to generate graph visualization: {e}")
     
     def _sanitize_name(self, name: str) -> str:
         """Sanitize a name for use as a Python identifier."""

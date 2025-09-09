@@ -78,6 +78,9 @@ def cli(ctx):
       # Convert with custom output directory
       yaml-to-langgraph convert workflow.yml -o my_workflow
       
+      # Generate graph visualization
+      yaml-to-langgraph visualize workflow.yml
+      
       # List nodes without generating code
       yaml-to-langgraph list-nodes workflow.yml
       
@@ -95,7 +98,18 @@ def cli(ctx):
               help='Enable verbose output showing all generated files')
 @click.option('--skip-validation', is_flag=True,
               help='Skip YAML schema validation (not recommended)')
-def convert(yaml_file: Path, output_dir: Optional[str], verbose: bool, skip_validation: bool):
+@click.option('--no-visualization', is_flag=True,
+              help='Skip generating graph visualization')
+@click.option('--visualization-format', 
+              type=click.Choice(['png', 'svg', 'pdf']), 
+              default='png',
+              help='Format for graph visualization (default: png)')
+@click.option('--visualization-layout', 
+              type=click.Choice(['hierarchical', 'spring', 'circular']), 
+              default='hierarchical',
+              help='Layout algorithm for graph visualization (default: hierarchical)')
+def convert(yaml_file: Path, output_dir: Optional[str], verbose: bool, skip_validation: bool, 
+            no_visualization: bool, visualization_format: str, visualization_layout: str):
     """
     🔄 Convert YAML workflow to LangGraph implementation.
     
@@ -144,7 +158,7 @@ def convert(yaml_file: Path, output_dir: Optional[str], verbose: bool, skip_vali
             ) as progress:
                 task = progress.add_task("Converting YAML to LangGraph...", total=100)
                 
-                converter = YAMLToLangGraphConverter(str(yaml_file), output_dir)
+                converter = YAMLToLangGraphConverter(str(yaml_file), output_dir, not no_visualization)
                 progress.update(task, advance=30, description="Parsing YAML file...")
                 
                 output_path = converter.convert()
@@ -152,7 +166,7 @@ def convert(yaml_file: Path, output_dir: Optional[str], verbose: bool, skip_vali
                 
                 progress.update(task, completed=100, description="Conversion complete!")
         else:
-            converter = YAMLToLangGraphConverter(str(yaml_file), output_dir)
+            converter = YAMLToLangGraphConverter(str(yaml_file), output_dir, not no_visualization)
             output_path = converter.convert()
         
         if verbose:
@@ -229,6 +243,103 @@ def convert(yaml_file: Path, output_dir: Optional[str], verbose: bool, skip_vali
             console.print(f"[bold red]Error:[/bold red] {e}")
         else:
             click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument('yaml_file', type=click.Path(exists=True, path_type=Path))
+@click.option('-o', '--output', 'output_file', 
+              help='Output file path for the visualization (default: workflow_graph.png)')
+@click.option('--format', 'output_format',
+              type=click.Choice(['png', 'svg', 'pdf']), 
+              default='png',
+              help='Format for graph visualization (default: png)')
+@click.option('--layout', 'layout_algorithm',
+              type=click.Choice(['hierarchical', 'spring', 'circular']), 
+              default='hierarchical',
+              help='Layout algorithm for graph visualization (default: hierarchical)')
+@click.option('--size', 'figure_size',
+              type=(int, int), 
+              default=(16, 10),
+              help='Figure size as width height (default: 16 10)')
+@click.option('--dpi', 
+              type=int, 
+              default=300,
+              help='DPI for the output image (default: 300)')
+def visualize(yaml_file: Path, output_file: Optional[str], output_format: str, 
+              layout_algorithm: str, figure_size: tuple, dpi: int):
+    """
+    🎨 Generate a visual representation of the workflow graph.
+    
+    YAML_FILE: Path to the YAML workflow file to visualize
+    """
+    try:
+        from .yaml_parser import YAMLWorkflowParser
+        from .graph_visualizer import GraphVisualizer, VisualizationConfig
+        
+        if RICH_AVAILABLE:
+            with console.status("[bold green]Parsing YAML file..."):
+                parser = YAMLWorkflowParser(str(yaml_file))
+                workflow_info = parser.parse()
+        else:
+            parser = YAMLWorkflowParser(str(yaml_file))
+            workflow_info = parser.parse()
+        
+        # Determine output file path
+        if output_file is None:
+            safe_name = "".join(c if c.isalnum() else "_" for c in workflow_info.name)
+            safe_name = "_".join(part for part in safe_name.split("_") if part)
+            output_file = f"{safe_name.lower()}_graph.{output_format}"
+        
+        # Create visualization config
+        config = VisualizationConfig(
+            output_format=output_format,
+            layout_algorithm=layout_algorithm,
+            figure_size=figure_size,
+            dpi=dpi,
+            show_labels=True,
+            show_edge_labels=True,
+            color_scheme="default"
+        )
+        
+        if RICH_AVAILABLE:
+            with console.status("[bold green]Generating graph visualization..."):
+                visualizer = GraphVisualizer(config)
+                visualization_path = visualizer.visualize_workflow(workflow_info, output_file)
+        else:
+            visualizer = GraphVisualizer(config)
+            visualization_path = visualizer.visualize_workflow(workflow_info, output_file)
+        
+        if RICH_AVAILABLE:
+            console.print(f"[bold green]✅ Graph visualization saved to:[/bold green] {visualization_path}")
+            
+            # Show workflow info
+            info_text = f"[bold blue]Workflow:[/bold blue] {workflow_info.name}\n"
+            info_text += f"[bold blue]Nodes:[/bold blue] {len(workflow_info.nodes)}\n"
+            info_text += f"[bold blue]Edges:[/bold blue] {len(workflow_info.edges)}\n"
+            info_text += f"[bold blue]Format:[/bold blue] {output_format.upper()}\n"
+            info_text += f"[bold blue]Layout:[/bold blue] {layout_algorithm}"
+            
+            console.print(Panel(info_text, title="[bold green]Visualization Info[/bold green]", border_style="green"))
+        else:
+            click.echo(f"✅ Graph visualization saved to: {visualization_path}")
+            click.echo(f"Workflow: {workflow_info.name}")
+            click.echo(f"Nodes: {len(workflow_info.nodes)}, Edges: {len(workflow_info.edges)}")
+            click.echo(f"Format: {output_format.upper()}, Layout: {layout_algorithm}")
+        
+    except ImportError as e:
+        if RICH_AVAILABLE:
+            console.print(f"[bold red]❌ Missing dependencies for visualization:[/bold red] {e}")
+            console.print("[bold yellow]Install required packages:[/bold yellow] pip install graphviz matplotlib networkx")
+        else:
+            click.echo(f"❌ Missing dependencies for visualization: {e}", err=True)
+            click.echo("Install required packages: pip install graphviz matplotlib networkx", err=True)
+        sys.exit(1)
+    except Exception as e:
+        if RICH_AVAILABLE:
+            console.print(f"[bold red]Error generating visualization:[/bold red] {e}")
+        else:
+            click.echo(f"Error generating visualization: {e}", err=True)
         sys.exit(1)
 
 
