@@ -88,6 +88,9 @@ yaml-to-langgraph visualize workflow.yml --format svg
 yaml-to-langgraph visualize workflow.yml --size 30 20
 yaml-to-langgraph visualize workflow.yml --dpi 300
 
+# Generate high-resolution (HD) visualization
+yaml-to-langgraph visualize workflow.yml --size 30 20 --dpi 300 --output workflow_hd.png
+
 # Different layout algorithms
 yaml-to-langgraph visualize workflow.yml --layout hierarchical
 yaml-to-langgraph visualize workflow.yml --layout flowchart
@@ -220,6 +223,23 @@ config = VisualizationConfig(
 visualizer = GraphVisualizer(config)
 output_path = visualizer.visualize_workflow(workflow_info, "workflow_diagram.png")
 print(f"Visualization saved to: {output_path}")
+
+# Generate high-resolution (HD) visualization
+hd_config = VisualizationConfig(
+    output_format="png",
+    layout_algorithm="hierarchical",
+    figure_size=(30, 20),          # Large size for HD
+    dpi=300,                       # High resolution
+    theme="default",
+    show_edge_labels=False,
+    show_loops=True,
+    loop_grouping=True,
+    max_label_length=20
+)
+
+hd_visualizer = GraphVisualizer(hd_config)
+hd_output_path = hd_visualizer.visualize_workflow(workflow_info, "workflow_hd.png")
+print(f"HD visualization saved to: {hd_output_path}")
 ```
 
 #### Error Handling
@@ -532,6 +552,7 @@ make uv-update          # Update dependencies
 | `yaml-to-langgraph convert workflow.yml --output my_dir` | Convert to specific directory |
 | `yaml-to-langgraph visualize workflow.yml` | Generate workflow diagram |
 | `yaml-to-langgraph visualize workflow.yml --theme dark` | Generate dark theme diagram |
+| `yaml-to-langgraph visualize workflow.yml --size 30 20 --dpi 300` | Generate HD diagram |
 | `yaml-to-langgraph list-nodes workflow.yml` | List all nodes |
 | `yaml-to-langgraph dry-run workflow.yml` | Preview what would be generated |
 
