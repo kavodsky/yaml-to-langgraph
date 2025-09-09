@@ -1,6 +1,6 @@
 # YAML to LangGraph Converter
 
-A powerful tool for converting Defy YAML workflow files to LangGraph implementations with comprehensive validation and beautiful CLI output.
+A powerful tool for converting Defy YAML workflow files to LangGraph implementations with comprehensive validation, beautiful CLI output, and professional workflow visualization.
 
 ## Features
 
@@ -10,6 +10,10 @@ A powerful tool for converting Defy YAML workflow files to LangGraph implementat
 - 🧪 **Comprehensive Testing**: Full test suite with pytest
 - 📦 **Modern Packaging**: Standard Python package structure
 - 🛠️ **Extensible**: Easy to customize and extend
+- 🎨 **Professional Visualization**: High-quality workflow diagrams using Mermaid + Pyppeteer
+- 🔄 **Advanced Loop Support**: Proper handling of complex loop structures with break conditions
+- 📊 **State Management**: Intelligent variable reference handling and state tracking
+- 🎯 **Multiple Themes**: Default, dark, forest, and neutral visualization themes
 
 ## Installation
 
@@ -67,6 +71,35 @@ yaml-to-langgraph convert --help
 yaml-to-langgraph validate --help
 ```
 
+#### 🎨 Workflow Visualization
+
+```bash
+# Generate a visual representation of the workflow
+yaml-to-langgraph visualize workflow.yml
+
+# Visualize with different themes
+yaml-to-langgraph visualize workflow.yml --theme dark
+yaml-to-langgraph visualize workflow.yml --theme forest
+yaml-to-langgraph visualize workflow.yml --theme neutral
+
+# Customize visualization output
+yaml-to-langgraph visualize workflow.yml --output my_workflow.png
+yaml-to-langgraph visualize workflow.yml --format svg
+yaml-to-langgraph visualize workflow.yml --size 30 20
+yaml-to-langgraph visualize workflow.yml --dpi 300
+
+# Different layout algorithms
+yaml-to-langgraph visualize workflow.yml --layout hierarchical
+yaml-to-langgraph visualize workflow.yml --layout flowchart
+yaml-to-langgraph visualize workflow.yml --layout graph
+
+# Show edge labels (can make complex graphs cluttered)
+yaml-to-langgraph visualize workflow.yml --show-edge-labels
+
+# Disable loop grouping
+yaml-to-langgraph visualize workflow.yml --no-loops
+```
+
 #### Validation Examples
 
 ```bash
@@ -83,8 +116,11 @@ yaml-to-langgraph validate workflow.yml --verbose
 #### Conversion Examples
 
 ```bash
-# Simple conversion
+# Simple conversion (includes automatic visualization)
 yaml-to-langgraph convert sample_workflow.yml
+
+# Convert without visualization
+yaml-to-langgraph convert sample_workflow.yml --no-visualization
 
 # Convert to specific directory
 yaml-to-langgraph convert sample_workflow.yml --output generated_workflow
@@ -144,6 +180,46 @@ print(f"Number of edges: {len(workflow_data.graph.edges)}")
 # Get LLM nodes
 llm_nodes = [node for node in workflow_data.graph.nodes if node.type == "llm"]
 print(f"LLM nodes: {[node.id for node in llm_nodes]}")
+
+# Access loop information
+for loop in workflow_data.loops:
+    print(f"Loop {loop.id}: {loop.title}")
+    print(f"  Max iterations: {loop.max_iterations}")
+    print(f"  Break conditions: {loop.break_conditions}")
+    print(f"  Child nodes: {[node.id for node in loop.child_nodes]}")
+
+# Access state variables
+for var in workflow_data.state_variables:
+    print(f"State variable: {var.node_id}.{var.variable_name} ({var.variable_type})")
+```
+
+#### 🎨 Visualization API
+
+```python
+from yaml_to_langgraph.graph_visualizer import GraphVisualizer, VisualizationConfig
+from yaml_to_langgraph.yaml_parser import YAMLWorkflowParser
+
+# Parse workflow
+parser = YAMLWorkflowParser("workflow.yml")
+workflow_info = parser.parse()
+
+# Create visualization config
+config = VisualizationConfig(
+    output_format="png",           # png, svg, pdf
+    layout_algorithm="hierarchical", # hierarchical, flowchart, graph
+    figure_size=(24, 16),          # width, height in inches
+    dpi=300,                       # resolution
+    theme="default",               # default, dark, forest, neutral
+    show_edge_labels=False,        # show edge labels
+    show_loops=True,               # enable loop grouping
+    loop_grouping=True,            # group loop nodes
+    max_label_length=20            # truncate long labels
+)
+
+# Generate visualization
+visualizer = GraphVisualizer(config)
+output_path = visualizer.visualize_workflow(workflow_info, "workflow_diagram.png")
+print(f"Visualization saved to: {output_path}")
 ```
 
 #### Error Handling
@@ -176,13 +252,16 @@ generated_workflow/
 │   └── ...
 ├── nodes/                      # Node implementations
 │   ├── workflow_nodes.py
+│   ├── llm_node.py            # Enhanced LLM nodes with state management
 │   └── custom_nodes.py
 ├── edges/                      # Edge definitions and routing logic
 │   ├── routing.py
 │   └── conditions.py
 ├── workflow_graph.py          # Main graph assembly
+├── loop_aware_graph.py        # Advanced loop handling with LangGraph For constructs
 ├── example_usage.py           # Usage example
 ├── requirements.txt           # Dependencies
+├── workflow_graph.png         # Professional workflow visualization
 └── README.md                  # Generated documentation
 ```
 
@@ -338,6 +417,83 @@ workflow:
           label: "valid"
 ```
 
+#### Example 3: Complex Loop Workflow
+
+```yaml
+# loop_workflow.yml
+app:
+  name: "iterative-processor"
+  description: "Workflow with iterative processing loop"
+
+workflow:
+  graph:
+    nodes:
+      - id: "start"
+        type: "start"
+        data:
+          type: "start"
+          title: "Start Processing"
+      - id: "main_loop"
+        type: "loop"
+        data:
+          type: "loop"
+          title: "Main Processing Loop"
+          loop_config:
+            max_iterations: 5
+            break_conditions:
+              - condition: "{{Objection}} == 'resolved'"
+                description: "Stop when objection is resolved"
+            loop_variables:
+              - name: "iteration_count"
+                initial_value: 0
+              - name: "Objection"
+                initial_value: "pending"
+        children:
+          - id: "loop_start"
+            type: "loop-start"
+            data:
+              type: "loop-start"
+              title: "Loop Start"
+          - id: "process_item"
+            type: "llm"
+            data:
+              type: "llm"
+              title: "Process Item"
+              model:
+                provider: "openai"
+                name: "gpt-4"
+              prompt_template:
+                - role: "system"
+                  content: "Process item {{iteration_count}}: {{input_data}}"
+          - id: "check_objection"
+            type: "llm"
+            data:
+              type: "llm"
+              title: "Check for Objections"
+              model:
+                provider: "openai"
+                name: "gpt-4"
+              prompt_template:
+                - role: "system"
+                  content: "Check if there are objections: {{process_item.output}}"
+      - id: "end"
+        type: "end"
+        data:
+          type: "end"
+          title: "End"
+    edges:
+      - id: "e1"
+        source: "start"
+        target: "main_loop"
+        data:
+          label: "always"
+      - id: "e2"
+        source: "main_loop"
+        target: "end"
+        data:
+          label: "loop_complete"
+```
+
 ### Using Make Commands
 
 The project includes a comprehensive Makefile for development:
@@ -374,8 +530,22 @@ make uv-update          # Update dependencies
 | `yaml-to-langgraph validate workflow.yml` | Validate YAML workflow |
 | `yaml-to-langgraph convert workflow.yml` | Convert to LangGraph |
 | `yaml-to-langgraph convert workflow.yml --output my_dir` | Convert to specific directory |
+| `yaml-to-langgraph visualize workflow.yml` | Generate workflow diagram |
+| `yaml-to-langgraph visualize workflow.yml --theme dark` | Generate dark theme diagram |
 | `yaml-to-langgraph list-nodes workflow.yml` | List all nodes |
 | `yaml-to-langgraph dry-run workflow.yml` | Preview what would be generated |
+
+### Visualization Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--theme` | Theme: default, dark, forest, neutral | default |
+| `--layout` | Layout: hierarchical, flowchart, graph | hierarchical |
+| `--format` | Output format: png, svg, pdf | png |
+| `--size` | Figure size (width height) | 24 16 |
+| `--dpi` | Resolution | 300 |
+| `--show-edge-labels` | Show edge labels | false |
+| `--no-loops` | Disable loop grouping | false |
 
 ### Make Commands
 
@@ -399,9 +569,9 @@ workflow:
   graph:
     nodes:
       - id: "node_id"
-        type: "llm|start|end|code"
+        type: "llm|start|end|code|loop|loop-start|assigner"
         data:
-          type: "llm|start|end|code"
+          type: "llm|start|end|code|loop|loop-start|assigner"
           title: "Node Title"
           # ... node-specific data
     edges:
@@ -415,11 +585,43 @@ workflow:
 ### Generated Files
 
 - `workflow_graph.py` - Main graph implementation
+- `loop_aware_graph.py` - Advanced loop handling
 - `prompts/` - LLM prompt templates
 - `nodes/` - Node implementations
 - `edges/` - Routing logic
 - `example_usage.py` - Usage example
 - `requirements.txt` - Dependencies
+- `workflow_graph.png` - Professional workflow visualization
+
+## Advanced Features
+
+### 🔄 Loop Support
+
+The converter provides advanced loop handling:
+
+- **Hierarchical Loop Structure**: Proper handling of `loop` containers with `loop-start` nodes
+- **Break Conditions**: Support for conditional loop exit based on state variables
+- **Loop Variables**: Automatic tracking of loop-specific state variables
+- **LangGraph Integration**: Generates proper `For` constructs for LangGraph execution
+
+### 📊 State Management
+
+Intelligent state management features:
+
+- **Variable References**: Automatic detection of `{{#node_id.field#}}` patterns in prompts
+- **State Variable Tracking**: Comprehensive tracking of all state variables across the workflow
+- **Dependency Analysis**: Automatic detection of node dependencies based on variable usage
+- **Enhanced LLM Nodes**: LLM nodes automatically update state with multiple output keys
+
+### 🎨 Professional Visualization
+
+High-quality workflow visualization using Mermaid + Pyppeteer:
+
+- **Multiple Themes**: Default, dark, forest, and neutral themes
+- **Loop Grouping**: Visual grouping of loop nodes with subgraphs
+- **Emoji Icons**: Visual node type identification (🚀 Start, 🏁 End, 🤖 LLM, etc.)
+- **Compact Output**: Small file sizes (90%+ smaller than previous backends)
+- **Scalable Quality**: Vector-based rendering maintains perfect quality at any size
 
 ## Development
 
@@ -466,8 +668,9 @@ yaml_to_langgraph/
 │       ├── cli.py              # Command-line interface
 │       ├── converter.py        # Main converter logic
 │       ├── schema_validator.py # YAML validation
-│       ├── yaml_parser.py      # YAML parsing
-│       └── code_generator.py   # Code generation
+│       ├── yaml_parser.py      # YAML parsing with loop/state support
+│       ├── code_generator.py   # Code generation with loop awareness
+│       └── graph_visualizer.py # Mermaid + Pyppeteer visualization
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py
@@ -481,12 +684,15 @@ yaml_to_langgraph/
 
 ## Testing
 
-The project includes a comprehensive test suite with 41 tests covering:
+The project includes a comprehensive test suite covering:
 
 - **Schema Validation**: YAML structure validation
 - **CLI Functionality**: Command-line interface testing
 - **Core Converter**: Conversion logic testing
 - **Sample Workflow**: Real-world workflow testing
+- **Loop Handling**: Complex loop structure testing
+- **State Management**: Variable reference and state tracking testing
+- **Visualization**: Mermaid diagram generation testing
 
 ```bash
 # Run all tests

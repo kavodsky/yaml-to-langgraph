@@ -1,46 +1,47 @@
 """
-Graph Visualizer for YAML to LangGraph Workflows
+Enhanced graph visualizer using Mermaid + Pyppeteer for professional diagrams.
 
-Generates visual representations of workflow graphs using multiple backends.
+This module provides high-quality workflow visualizations using Mermaid diagrams
+rendered with Pyppeteer for crisp, scalable output.
 """
 
-from typing import Dict, Optional, Tuple
+import json
+import tempfile
 from pathlib import Path
+from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 
 try:
-    import networkx as nx
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
-    MATPLOTLIB_AVAILABLE = True
+    import pyppeteer
+    from pyppeteer import launch
+    PYPPETEER_AVAILABLE = True
 except ImportError:
-    MATPLOTLIB_AVAILABLE = False
-
-try:
-    import graphviz
-    GRAPHVIZ_AVAILABLE = True
-except ImportError:
-    GRAPHVIZ_AVAILABLE = False
+    PYPPETEER_AVAILABLE = False
 
 from .yaml_parser import WorkflowInfo
 
 
 @dataclass
 class VisualizationConfig:
-    """Configuration for graph visualization."""
+    """Configuration for Mermaid graph visualization."""
     output_format: str = "png"  # png, svg, pdf
-    layout_algorithm: str = "hierarchical"  # hierarchical, spring, circular
-    node_size: int = 1000
-    font_size: int = 10
-    figure_size: Tuple[int, int] = (16, 10)
+    layout_algorithm: str = "hierarchical"  # hierarchical, flowchart, graph
+    figure_size: Tuple[int, int] = (24, 16)  # width, height in inches
     dpi: int = 300
     show_labels: bool = True
-    show_edge_labels: bool = True
+    show_edge_labels: bool = False
     color_scheme: str = "default"  # default, colorful, monochrome
+    # Enhanced visualization options
+    show_loops: bool = True
+    loop_grouping: bool = True
+    node_spacing: float = 2.0
+    show_node_types: bool = True
+    max_label_length: int = 20
+    theme: str = "default"  # default, dark, forest, neutral
 
 
 class GraphVisualizer:
-    """Visualizer for workflow graphs."""
+    """Professional graph visualizer using Mermaid + Pyppeteer."""
     
     def __init__(self, config: Optional[VisualizationConfig] = None):
         """
@@ -50,11 +51,22 @@ class GraphVisualizer:
             config: Visualization configuration
         """
         self.config = config or VisualizationConfig()
-        self.node_colors = self._get_node_colors()
         
+        # Node type colors (Mermaid-compatible)
+        self.node_colors = {
+            'start': '#4CAF50',      # Green
+            'end': '#F44336',        # Red
+            'llm': '#2196F3',        # Blue
+            'assigner': '#FF9800',   # Orange
+            'loop': '#9C27B0',       # Purple
+            'loop-start': '#9C27B0', # Purple
+            'code': '#607D8B',       # Blue Grey
+            'default': '#E1E1E1'     # Light Grey
+        }
+    
     def visualize_workflow(self, workflow_info: WorkflowInfo, output_path: str) -> str:
         """
-        Generate a visual representation of the workflow.
+        Generate a professional visualization of the workflow using Mermaid.
         
         Args:
             workflow_info: Parsed workflow information
@@ -63,246 +75,237 @@ class GraphVisualizer:
         Returns:
             Path to the generated visualization file
         """
-        if not MATPLOTLIB_AVAILABLE and not GRAPHVIZ_AVAILABLE:
-            raise ImportError("Neither matplotlib nor graphviz is available. Please install at least one.")
+        if not PYPPETEER_AVAILABLE:
+            raise ImportError("Pyppeteer is not available. Please install it: pip install pyppeteer")
         
-        # Try Graphviz first (better for hierarchical layouts)
-        if GRAPHVIZ_AVAILABLE and self.config.layout_algorithm == "hierarchical":
-            try:
-                return self._visualize_with_graphviz(workflow_info, output_path)
-            except Exception as e:
-                print(f"Graphviz visualization failed: {e}. Falling back to matplotlib.")
+        # Generate Mermaid diagram
+        mermaid_code = self._generate_mermaid_diagram(workflow_info)
         
-        # Fallback to matplotlib
-        if MATPLOTLIB_AVAILABLE:
-            return self._visualize_with_matplotlib(workflow_info, output_path)
+        # Render with Pyppeteer
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         
-        raise RuntimeError("No visualization backend available")
+        return self._render_with_pyppeteer(mermaid_code, output_path)
     
-    def _visualize_with_graphviz(self, workflow_info: WorkflowInfo, output_path: str) -> str:
-        """Generate visualization using Graphviz."""
-        # Create a new directed graph
-        dot = graphviz.Digraph(comment=workflow_info.name)
-        dot.attr(rankdir='LR', size='12,8')
-        dot.attr('node', shape='box', style='rounded,filled', fontname='Arial')
-        dot.attr('edge', fontname='Arial', fontsize='10')
+    def _generate_mermaid_diagram(self, workflow_info: WorkflowInfo) -> str:
+        """Generate Mermaid diagram code from workflow information."""
+        lines = []
         
-        # Add nodes
+        # Add diagram type and configuration
+        if self.config.layout_algorithm == "hierarchical":
+            lines.append("graph TD")
+        elif self.config.layout_algorithm == "flowchart":
+            lines.append("flowchart TD")
+        else:
+            lines.append("graph TD")
+        
+        # Add theme configuration
+        if self.config.theme != "default":
+            lines.append(f"%%{{init: {{'theme':'{self.config.theme}'}}}}%%")
+        
+        lines.append("")
+        
+        # Group nodes by loops and standalone
+        standalone_nodes = []
+        loop_groups = {}
+        
         for node in workflow_info.nodes:
-            node_id = self._sanitize_node_id(node.id)
-            node_title = node.title or node.id
-            node_type = node.node_type
+            if node.is_in_loop and node.loop_id:
+                if node.loop_id not in loop_groups:
+                    loop_groups[node.loop_id] = []
+                loop_groups[node.loop_id].append(node)
+            else:
+                standalone_nodes.append(node)
+        
+        # Add standalone nodes
+        for node in standalone_nodes:
+            node_def = self._create_mermaid_node(node)
+            lines.append(f"    {node_def}")
+        
+        lines.append("")
+        
+        # Add loop subgraphs
+        for loop_id, loop_nodes in loop_groups.items():
+            loop_info = None
+            for loop in workflow_info.loops:
+                if loop.id == loop_id:
+                    loop_info = loop
+                    break
             
-            # Set node color based on type
-            color = self.node_colors.get(node_type, '#E1E1E1')
-            
-            # Create node label with type and title
-            label = f"{node_title}\\n({node_type})"
-            
-            dot.node(node_id, label, fillcolor=color, fontcolor='black')
+            lines.append(f"    subgraph {self._sanitize_id(loop_id)} [\"🔄 {loop_info.title if loop_info else 'Loop'}\"]")
+            for node in loop_nodes:
+                node_def = self._create_mermaid_node(node)
+                lines.append(f"        {node_def}")
+            lines.append("    end")
+            lines.append("")
         
         # Add edges
         for edge in workflow_info.edges:
-            source_id = self._sanitize_node_id(edge.source)
-            target_id = self._sanitize_node_id(edge.target)
-            
-            # Get edge label if available
-            edge_label = ""
-            if hasattr(edge, 'data') and edge.data and 'label' in edge.data:
-                edge_label = edge.data['label']
-            
-            dot.edge(source_id, target_id, label=edge_label)
+            edge_def = self._create_mermaid_edge(edge)
+            lines.append(f"    {edge_def}")
         
-        # Render the graph
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Generate the file
-        dot.render(output_path.with_suffix(''), format=self.config.output_format, cleanup=True)
-        
-        return str(output_path.with_suffix(f'.{self.config.output_format}'))
+        return "\n".join(lines)
     
-    def _visualize_with_matplotlib(self, workflow_info: WorkflowInfo, output_path: str) -> str:
-        """Generate visualization using matplotlib and networkx."""
-        # Create a directed graph
-        G = nx.DiGraph()
+    def _create_mermaid_node(self, node) -> str:
+        """Create a Mermaid node definition."""
+        node_id = self._sanitize_id(node.id)
+        title = node.title or node.id
         
-        # Add nodes with attributes
-        for node in workflow_info.nodes:
-            node_id = self._sanitize_node_id(node.id)
-            G.add_node(
-                node_id,
-                title=node.title or node.id,
-                node_type=node.node_type,
-                position=node.position
-            )
+        # Truncate long titles
+        if len(title) > self.config.max_label_length:
+            title = title[:self.config.max_label_length-3] + "..."
         
-        # Add edges with labels
-        for edge in workflow_info.edges:
-            source_id = self._sanitize_node_id(edge.source)
-            target_id = self._sanitize_node_id(edge.target)
-            
-            edge_label = ""
-            if hasattr(edge, 'data') and edge.data and 'label' in edge.data:
-                edge_label = edge.data['label']
-            
-            G.add_edge(source_id, target_id, label=edge_label)
-        
-        # Create the plot
-        plt.figure(figsize=self.config.figure_size, dpi=self.config.dpi)
-        
-        # Choose layout
-        if self.config.layout_algorithm == "hierarchical":
-            pos = self._hierarchical_layout(G, workflow_info)
-        elif self.config.layout_algorithm == "spring":
-            pos = nx.spring_layout(G, k=3, iterations=50)
-        elif self.config.layout_algorithm == "circular":
-            pos = nx.circular_layout(G)
+        # Create node definition with emoji and proper Mermaid syntax
+        if node.node_type == 'start':
+            return f"{node_id}[\"🚀 {title}\"]"
+        elif node.node_type == 'end':
+            return f"{node_id}[\"🏁 {title}\"]"
+        elif node.node_type == 'llm':
+            return f"{node_id}[\"🤖 {title}\"]"
+        elif node.node_type == 'assigner':
+            return f"{node_id}[\"⚙️ {title}\"]"
+        elif node.node_type in ['loop', 'loop-start']:
+            return f"{node_id}[\"🔄 {title}\"]"
         else:
-            pos = nx.spring_layout(G)
+            return f"{node_id}[\"📦 {title}\"]"
+    
+    def _create_mermaid_edge(self, edge) -> str:
+        """Create a Mermaid edge definition."""
+        source_id = self._sanitize_id(edge.source)
+        target_id = self._sanitize_id(edge.target)
         
-        # Draw nodes
-        node_colors = []
-        node_labels = {}
-        
-        for node_id in G.nodes():
-            node_data = G.nodes[node_id]
-            node_type = node_data.get('node_type', 'unknown')
-            node_colors.append(self.node_colors.get(node_type, '#E1E1E1'))
-            
-            if self.config.show_labels:
-                node_labels[node_id] = node_data.get('title', node_id)
-        
-        # Draw the graph
-        nx.draw_networkx_nodes(
-            G, pos,
-            node_color=node_colors,
-            node_size=self.config.node_size,
-            alpha=0.8
-        )
-        
-        if self.config.show_labels:
-            nx.draw_networkx_labels(
-                G, pos,
-                labels=node_labels,
-                font_size=self.config.font_size,
-                font_weight='bold'
-            )
-        
-        # Draw edges
-        nx.draw_networkx_edges(
-            G, pos,
-            edge_color='gray',
-            arrows=True,
-            arrowsize=20,
-            arrowstyle='->',
-            alpha=0.6
-        )
-        
-        # Draw edge labels
+        # Add edge label if enabled and available
+        edge_label = ""
         if self.config.show_edge_labels:
-            edge_labels = nx.get_edge_attributes(G, 'label')
-            nx.draw_networkx_edge_labels(
-                G, pos,
-                edge_labels=edge_labels,
-                font_size=8
-            )
+            if hasattr(edge, 'data') and edge.data and 'label' in edge.data:
+                edge_label = f"|{edge.data['label']}|"
         
-        # Create legend
-        self._create_legend()
-        
-        # Set title and layout
-        plt.title(f"Workflow: {workflow_info.name}", fontsize=16, fontweight='bold', pad=20)
-        plt.axis('off')
-        plt.tight_layout()
-        
-        # Save the plot
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(output_path, format=self.config.output_format, dpi=self.config.dpi, bbox_inches='tight')
-        plt.close()
-        
-        return str(output_path)
+        # Different styling for loop edges
+        if edge.is_in_loop:
+            return f"{source_id} -.->{edge_label} {target_id}"
+        else:
+            return f"{source_id} -->{edge_label} {target_id}"
     
-    def _hierarchical_layout(self, G: nx.DiGraph, workflow_info: WorkflowInfo) -> Dict[str, Tuple[float, float]]:
-        """Create a hierarchical layout using node positions from YAML if available."""
-        pos = {}
-        
-        # Try to use positions from YAML first
-        has_positions = False
-        for node in workflow_info.nodes:
-            node_id = self._sanitize_node_id(node.id)
-            if node.position:
-                # Scale positions to fit the figure
-                x = node.position.get('x', 0) / 100.0
-                y = -node.position.get('y', 0) / 100.0  # Flip Y axis
-                pos[node_id] = (x, y)
-                has_positions = True
-        
-        if not has_positions:
-            # Fallback to automatic hierarchical layout
-            try:
-                pos = nx.nx_agraph.graphviz_layout(G, prog='dot')
-            except:
-                # If graphviz layout fails, use spring layout
-                pos = nx.spring_layout(G, k=3, iterations=50)
-        
-        return pos
-    
-    def _create_legend(self):
-        """Create a legend for node types."""
-        legend_elements = []
-        for node_type, color in self.node_colors.items():
-            legend_elements.append(
-                mpatches.Patch(color=color, label=node_type.title())
-            )
-        
-        if legend_elements:
-            plt.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(0, 1))
-    
-    def _get_node_colors(self) -> Dict[str, str]:
-        """Get color scheme for different node types."""
-        if self.config.color_scheme == "colorful":
-            return {
-                'start': '#4CAF50',      # Green
-                'end': '#F44336',        # Red
-                'llm': '#2196F3',        # Blue
-                'assigner': '#FF9800',   # Orange
-                'loop': '#9C27B0',       # Purple
-                'loop-start': '#9C27B0', # Purple
-                'code': '#607D8B',       # Blue Grey
-                'default': '#E1E1E1'     # Light Grey
-            }
-        elif self.config.color_scheme == "monochrome":
-            return {
-                'start': '#2E2E2E',      # Dark Grey
-                'end': '#2E2E2E',        # Dark Grey
-                'llm': '#5A5A5A',        # Medium Grey
-                'assigner': '#8A8A8A',   # Light Grey
-                'loop': '#5A5A5A',       # Medium Grey
-                'loop-start': '#5A5A5A', # Medium Grey
-                'code': '#8A8A8A',       # Light Grey
-                'default': '#E1E1E1'     # Very Light Grey
-            }
-        else:  # default
-            return {
-                'start': '#4CAF50',      # Green
-                'end': '#F44336',        # Red
-                'llm': '#2196F3',        # Blue
-                'assigner': '#FF9800',   # Orange
-                'loop': '#9C27B0',       # Purple
-                'loop-start': '#9C27B0', # Purple
-                'code': '#607D8B',       # Blue Grey
-                'default': '#E1E1E1'     # Light Grey
-            }
-    
-    def _sanitize_node_id(self, node_id: str) -> str:
-        """Sanitize node ID for use in graph libraries."""
-        # Replace special characters with underscores
+    def _sanitize_id(self, node_id: str) -> str:
+        """Sanitize node ID for Mermaid compatibility."""
+        # Replace non-alphanumeric characters with underscores
         sanitized = "".join(c if c.isalnum() else "_" for c in node_id)
         # Remove multiple underscores
         sanitized = "_".join(part for part in sanitized.split("_") if part)
+        # Ensure it starts with a letter
+        if sanitized and not sanitized[0].isalpha():
+            sanitized = "node_" + sanitized
         return sanitized
+    
+    def _render_with_pyppeteer(self, mermaid_code: str, output_path: Path) -> str:
+        """Render Mermaid diagram using Pyppeteer."""
+        import asyncio
+        
+        async def render_diagram():
+            # Launch browser
+            browser = await launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-setuid-sandbox']
+            )
+            
+            try:
+                page = await browser.newPage()
+                
+                # Set viewport size
+                width = int(self.config.figure_size[0] * self.config.dpi)
+                height = int(self.config.figure_size[1] * self.config.dpi)
+                await page.setViewport({'width': width, 'height': height})
+                
+                # Create HTML with Mermaid
+                html_content = self._create_html_template(mermaid_code)
+                await page.setContent(html_content)
+                
+                # Wait for Mermaid to render
+                await page.waitForSelector('.mermaid', {'timeout': 10000})
+                
+                # Check for any console errors
+                page.on('console', lambda msg: print(f'Console {msg.type}: {msg.text}'))
+                page.on('pageerror', lambda err: print(f'Page error: {err}'))
+                
+                await page.waitForFunction(
+                    'document.querySelector(".mermaid svg") !== null',
+                    {'timeout': 10000}
+                )
+                
+                # Get the SVG element
+                svg_element = await page.querySelector('.mermaid svg')
+                
+                if self.config.output_format == 'svg':
+                    # Get SVG content
+                    svg_content = await page.evaluate('(element) => element.outerHTML', svg_element)
+                    
+                    # Save SVG
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        f.write(svg_content)
+                
+                else:
+                    # Take screenshot
+                    await svg_element.screenshot({
+                        'path': str(output_path),
+                        'type': self.config.output_format
+                    })
+                
+                return str(output_path)
+                
+            finally:
+                await browser.close()
+        
+        # Run the async function
+        return asyncio.get_event_loop().run_until_complete(render_diagram())
+    
+    def _create_html_template(self, mermaid_code: str) -> str:
+        """Create HTML template for Mermaid rendering."""
+        return f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <script src="https://unpkg.com/mermaid@10.9.1/dist/mermaid.min.js"></script>
+    <style>
+        body {{
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: white;
+        }}
+        .mermaid {{
+            text-align: center;
+        }}
+    </style>
+</head>
+<body>
+    <div class="mermaid">
+{mermaid_code}
+    </div>
+    
+    <script>
+        mermaid.initialize({{
+            startOnLoad: true,
+            theme: '{self.config.theme}',
+            flowchart: {{
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis'
+            }},
+            themeVariables: {{
+                primaryColor: '#ffffff',
+                primaryTextColor: '#000000',
+                primaryBorderColor: '#000000',
+                lineColor: '#000000',
+                secondaryColor: '#f4f4f4',
+                tertiaryColor: '#ffffff'
+            }},
+            securityLevel: 'loose'
+        }});
+    </script>
+</body>
+</html>
+"""
 
 
 def create_workflow_visualization(

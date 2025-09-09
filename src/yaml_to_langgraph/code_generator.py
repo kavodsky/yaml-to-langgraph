@@ -54,6 +54,9 @@ class LangGraphCodeGenerator:
         self._generate_readme()
         self._generate_example()
         
+        # Generate loop-aware graph structure
+        self._generate_loop_aware_graph()
+        
         # Generate graph visualization
         if self.generate_visualization:
             self._generate_visualization()
@@ -174,12 +177,12 @@ def end_node(state: Dict[str, Any]) -> Dict[str, Any]:
         with open(self.output_dir / "nodes" / "end_node.py", 'w', encoding='utf-8') as f:
             f.write(end_node_content)
         
-        # LLM node template
+        # Enhanced LLM node template with proper state management
         llm_node_content = '''"""
-LLM node for processing with language models
+Enhanced LLM node for processing with language models and proper state management
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, List
 try:
     from langchain_core.messages import HumanMessage, SystemMessage
     from langchain_core.language_models import BaseLanguageModel
@@ -188,20 +191,20 @@ except ImportError:
     HumanMessage = SystemMessage = object
 
 
-def create_llm_node(
+def create_llm_node_with_state(
     system_prompt: str,
     user_prompt_template: str,
     model: BaseLanguageModel,
-    output_key: str = "text"
+    output_keys: List[str]
 ):
     """
-    Create an LLM node function with specified prompts and model.
+    Create an LLM node function with proper state management.
     
     Args:
         system_prompt: System prompt for the LLM
         user_prompt_template: User prompt template with placeholders
         model: LangChain language model instance
-        output_key: Key to store the output in state
+        output_keys: List of state keys to store outputs
         
     Returns:
         Node function for use in LangGraph
@@ -214,7 +217,7 @@ def create_llm_node(
             state: Current state containing input variables
             
         Returns:
-            Updated state with LLM output
+            Updated state with LLM outputs
         """
         try:
             # Format the user prompt with state variables
@@ -235,18 +238,48 @@ def create_llm_node(
             else:
                 output_text = str(response)
             
-            return {
-                **state,
-                output_key: output_text
-            }
+            # Update state with all output keys
+            updated_state = {**state}
+            for output_key in output_keys:
+                updated_state[output_key] = output_text
+            
+            return updated_state
             
         except Exception as e:
-            return {
-                **state,
-                output_key: f"Error in LLM processing: {str(e)}"
-            }
+            # Update state with error for all output keys
+            updated_state = {**state}
+            error_msg = f"Error in LLM processing: {str(e)}"
+            for output_key in output_keys:
+                updated_state[output_key] = error_msg
+            return updated_state
     
     return llm_node
+
+
+def create_llm_node(
+    system_prompt: str,
+    user_prompt_template: str,
+    model: BaseLanguageModel,
+    output_key: str = "text"
+):
+    """
+    Legacy LLM node function for backward compatibility.
+    
+    Args:
+        system_prompt: System prompt for the LLM
+        user_prompt_template: User prompt template with placeholders
+        model: LangChain language model instance
+        output_key: Key to store the output in state
+        
+    Returns:
+        Node function for use in LangGraph
+    """
+    return create_llm_node_with_state(
+        system_prompt=system_prompt,
+        user_prompt_template=user_prompt_template,
+        model=model,
+        output_keys=[output_key]
+    )
 '''
         
         with open(self.output_dir / "nodes" / "llm_node.py", 'w', encoding='utf-8') as f:
@@ -609,15 +642,18 @@ if __name__ == "__main__":
     def _generate_visualization(self) -> None:
         """Generate graph visualization."""
         try:
-            # Create visualization config
+            # Create enhanced visualization config
             config = VisualizationConfig(
                 output_format="png",
                 layout_algorithm="hierarchical",
-                figure_size=(16, 10),
+                figure_size=(24, 16),
                 dpi=300,
                 show_labels=True,
-                show_edge_labels=True,
-                color_scheme="default"
+                show_edge_labels=False,  # Disabled by default to reduce clutter
+                color_scheme="default",
+                show_loops=True,
+                loop_grouping=True,
+                theme="default"
             )
             
             # Generate the visualization
@@ -649,14 +685,221 @@ if __name__ == "__main__":
         """Convert YAML template variables to Python format string variables."""
         import re
         
-        # Convert {{#node_id.field#}} to {field}
+        # Convert {{#node_id.field#}} to {node_id_field}
         pattern = r'\{\{#([^#]+)#\}\}'
         matches = re.findall(pattern, template)
         
         for match in matches:
             parts = match.split('.')
             if len(parts) >= 2:
-                field_name = parts[-1].lower()
-                template = template.replace(f'{{{{#{match}#}}}}', f'{{{field_name}}}')
+                node_id = parts[0]
+                field_name = parts[-1]
+                
+                # Create state variable name
+                state_var_name = f"{node_id}_{field_name}"
+                template = template.replace(f'{{{{#{match}#}}}}', f'{{{state_var_name}}}')
         
         return template
+    
+    def _generate_loop_aware_graph(self) -> None:
+        """Generate a loop-aware graph structure."""
+        if not self.workflow_info.loops:
+            return
+        
+        # Generate loop handling code
+        loop_functions = []
+        loop_conditions = []
+        
+        for loop in self.workflow_info.loops:
+            # Generate loop condition function
+            condition_func = self._generate_loop_condition(loop)
+            loop_conditions.append(condition_func)
+            
+            # Generate loop body function
+            loop_body = self._generate_loop_body(loop)
+            loop_functions.append(loop_body)
+        
+        content = f'''"""
+Loop-aware graph structure for complex workflows
+"""
+
+from typing import Dict, Any, List
+try:
+    from langgraph.graph import StateGraph, For
+    from langchain_core.language_models import BaseLanguageModel
+except ImportError:
+    StateGraph = object
+    For = object
+    BaseLanguageModel = object
+
+from nodes.start_node import start_node
+from nodes.end_node import end_node
+from nodes.workflow_nodes import create_workflow_nodes
+
+{chr(10).join(loop_conditions)}
+
+{chr(10).join(loop_functions)}
+
+
+def create_loop_aware_graph(model: BaseLanguageModel) -> StateGraph:
+    """
+    Create a loop-aware workflow graph.
+    
+    Args:
+        model: LangChain language model instance
+        
+    Returns:
+        Configured StateGraph with proper loop handling
+    """
+    # Create all nodes
+    nodes = create_workflow_nodes(model)
+    
+    # Add basic nodes
+    nodes["start"] = start_node
+    nodes["end"] = end_node
+    
+    # Create the graph
+    workflow = StateGraph(Dict[str, Any])
+    
+    # Add standalone nodes (not in loops)
+    standalone_nodes = [node for node in self.workflow_info.nodes if not node.is_in_loop]
+    for node in standalone_nodes:
+        safe_name = self._sanitize_name(node.title or node.id)
+        if safe_name in nodes:
+            workflow.add_node(safe_name, nodes[safe_name])
+    
+    # Add loop structures
+    for loop in self.workflow_info.loops:
+        loop_name = self._sanitize_name(loop.title or loop.id)
+        
+        # Create loop subgraph
+        loop_graph = StateGraph(Dict[str, Any])
+        
+        # Add loop nodes
+        for child_node_id in loop.child_nodes:
+            child_node = next((n for n in self.workflow_info.nodes if n.id == child_node_id), None)
+            if child_node:
+                safe_name = self._sanitize_name(child_node.title or child_node.id)
+                if safe_name in nodes:
+                    loop_graph.add_node(safe_name, nodes[safe_name])
+        
+        # Add loop edges
+        loop_edges = [edge for edge in self.workflow_info.edges if edge.loop_id == loop.id]
+        for edge in loop_edges:
+            source_name = self._sanitize_name(edge.source)
+            target_name = self._sanitize_name(edge.target)
+            loop_graph.add_edge(source_name, target_name)
+        
+        # Set loop entry point
+        start_name = self._sanitize_name(loop.start_node_id)
+        loop_graph.set_entry_point(start_name)
+        
+        # Compile loop subgraph
+        compiled_loop = loop_graph.compile()
+        
+        # Add loop to main graph
+        workflow.add_node(loop_name, compiled_loop)
+    
+    # Add main workflow edges (non-loop edges)
+    main_edges = [edge for edge in self.workflow_info.edges if not edge.is_in_loop]
+    for edge in main_edges:
+        source_name = self._sanitize_name(edge.source)
+        target_name = self._sanitize_name(edge.target)
+        workflow.add_edge(source_name, target_name)
+    
+    # Set entry point
+    workflow.set_entry_point("start")
+    
+    return workflow
+
+
+def create_compiled_loop_aware_graph(model: BaseLanguageModel) -> Any:
+    """
+    Create and compile the loop-aware workflow graph.
+    
+    Args:
+        model: LangChain language model instance
+        
+    Returns:
+        Compiled graph ready for execution
+    """
+    workflow = create_loop_aware_graph(model)
+    return workflow.compile()
+'''
+        
+        with open(self.output_dir / "loop_aware_graph.py", 'w', encoding='utf-8') as f:
+            f.write(content)
+    
+    def _generate_loop_condition(self, loop) -> str:
+        """Generate loop condition function."""
+        condition_name = f"check_{self._sanitize_name(loop.id)}_condition"
+        
+        conditions = []
+        for break_condition in loop.break_conditions:
+            var_selector = break_condition.get('variable_selector', [])
+            if len(var_selector) >= 2:
+                var_name = var_selector[1]
+                operator = break_condition.get('comparison_operator', 'contains')
+                value = break_condition.get('value', '')
+                
+                if operator == 'contains':
+                    conditions.append(f'"{value}" in state.get("{var_name}", "")')
+                elif operator == 'equals':
+                    conditions.append(f'state.get("{var_name}", "") == "{value}"')
+                elif operator == 'not_equals':
+                    conditions.append(f'state.get("{var_name}", "") != "{value}"')
+        
+        # Combine conditions with logical operator
+        logical_op = loop.logical_operator.upper() if loop.logical_operator else 'AND'
+        combined_condition = f' {logical_op} '.join(conditions) if conditions else 'True'
+        
+        return f'''
+def {condition_name}(state: Dict[str, Any]) -> bool:
+    """
+    Check if loop should continue based on break conditions.
+    
+    Args:
+        state: Current state
+        
+    Returns:
+        True if loop should continue, False to break
+    """
+    # Check iteration count
+    iteration_count = state.get("iteration_count", 0)
+    if iteration_count >= {loop.max_iterations}:
+        return False
+    
+    # Check break conditions
+    if {combined_condition}:
+        return False  # Break condition met
+    
+    return True  # Continue loop
+'''
+    
+    def _generate_loop_body(self, loop) -> str:
+        """Generate loop body function."""
+        body_name = f"execute_{self._sanitize_name(loop.id)}_body"
+        
+        return f'''
+def {body_name}(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Execute loop body with proper state management.
+    
+    Args:
+        state: Current state
+        
+    Returns:
+        Updated state after loop iteration
+    """
+    # Increment iteration count
+    updated_state = {{
+        **state,
+        "iteration_count": state.get("iteration_count", 0) + 1
+    }}
+    
+    # Execute loop nodes in sequence
+    # This would be replaced with actual loop node execution
+    # based on the loop's child nodes and edges
+    
+    return updated_state
+'''

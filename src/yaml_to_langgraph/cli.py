@@ -255,19 +255,28 @@ def convert(yaml_file: Path, output_dir: Optional[str], verbose: bool, skip_vali
               default='png',
               help='Format for graph visualization (default: png)')
 @click.option('--layout', 'layout_algorithm',
-              type=click.Choice(['hierarchical', 'spring', 'circular']), 
+              type=click.Choice(['hierarchical', 'flowchart', 'graph']), 
               default='hierarchical',
               help='Layout algorithm for graph visualization (default: hierarchical)')
 @click.option('--size', 'figure_size',
               type=(int, int), 
-              default=(16, 10),
-              help='Figure size as width height (default: 16 10)')
+              default=(24, 16),
+              help='Figure size as width height (default: 24 16)')
 @click.option('--dpi', 
               type=int, 
               default=300,
               help='DPI for the output image (default: 300)')
+@click.option('--no-loops', is_flag=True,
+              help='Disable loop grouping visualization')
+@click.option('--show-edge-labels', is_flag=True,
+              help='Show edge labels (can make graph cluttered)')
+@click.option('--theme',
+              type=click.Choice(['default', 'dark', 'forest', 'neutral']),
+              default='default',
+              help='Mermaid theme (default: default)')
 def visualize(yaml_file: Path, output_file: Optional[str], output_format: str, 
-              layout_algorithm: str, figure_size: tuple, dpi: int):
+              layout_algorithm: str, figure_size: tuple, dpi: int, no_loops: bool, 
+              show_edge_labels: bool, theme: str):
     """
     🎨 Generate a visual representation of the workflow graph.
     
@@ -298,8 +307,11 @@ def visualize(yaml_file: Path, output_file: Optional[str], output_format: str,
             figure_size=figure_size,
             dpi=dpi,
             show_labels=True,
-            show_edge_labels=True,
-            color_scheme="default"
+            show_edge_labels=show_edge_labels,
+            color_scheme="default",
+            show_loops=not no_loops,
+            loop_grouping=not no_loops,
+            theme=theme
         )
         
         if RICH_AVAILABLE:
