@@ -1,6 +1,6 @@
 [project]
 name = "yaml-to-langgraph"
-version = "1.0.0"
+version = "1.0.1"
 description = "Convert YAML workflow files to LangGraph implementations"
 authors = [
     {name = "YAML to LangGraph Team", email = "team@example.com"}
